@@ -107,9 +107,17 @@ const addRegistry = (node, type, entry) => {
 };
 const clearRegistry = (el) => {
   if (!isElement(el)) return;
+  const detach = (node) => {
+    const store = registry.get(node);
+    if (!store) return;
+    for (const [type, list] of store) {
+      for (let i = 0; i < list.length; i++) node.removeEventListener(type, list[i].listener);
+    }
+    registry.delete(node);
+  };
+  detach(el);
   const all = el.querySelectorAll('*');
-  for (let i = 0; i < all.length; i++) registry.delete(all[i]);
-  registry.delete(el);
+  for (let i = 0; i < all.length; i++) detach(all[i]);
 };
 const splitWords = (str) => {
   if (!isString(str) || str.length === 0) return emptyArray;
@@ -469,8 +477,8 @@ class Tyrella {
     const len = this.length;
     if (isUndefined(value)) return len ? this[0].getAttribute(name) : null;
     for (let i = 0; i < len; i++) {
-      if (value) this[i].setAttribute(name, value);
-      else this[i].removeAttribute(name);
+      if (value == null) this[i].removeAttribute(name);
+      else this[i].setAttribute(name, value);
     }
     return this;
   }
@@ -570,10 +578,10 @@ class Tyrella {
       handler = maybeHandler;
     }
     const args = splitWords(events), argLen = args.length, len = this.length;
+    const listener = selector ? delegateFn(selector, handler) : handler;
     for (let e = 0; e < argLen; e++) {
       const type = args[e];
       for (let i = 0; i < len; i++) {
-        const listener = selector ? delegateFn(selector, handler) : handler;
         this[i].addEventListener(type, listener);
         addRegistry(this[i], type, { listener, handler, selector });
       }
@@ -613,9 +621,7 @@ class Tyrella {
     return this;
   }
   trigger(events, detail) {
-    const words = splitWords(events);
-    const args = words === emptyArray ? emptyArray : slice.call(words);
-    const argLen = args.length, len = this.length;
+    const args = splitWords(events), argLen = args.length, len = this.length;
     for (let e = 0; e < argLen; e++) {
       const type = args[e];
       for (let i = 0; i < len; i++) {
