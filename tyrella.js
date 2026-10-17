@@ -1,4 +1,4 @@
-// Tyrella JS v1.2
+// Tyrella JS v1.3
 (function (root, factory) {
   const api = factory(root);
   // Electron / NW.js expose BOTH `module` and `window`, so CommonJS export and the
@@ -27,19 +27,19 @@ const { stringify } = win.JSON;
 const template = doc.createElement('template');
 
 const WRAP_MAP = freeze({
-  tr: [3, '<table><tbody>', '</tbody></table>'],
-  tbody: [2, '<table>', '</table>'],
-  thead: [2, '<table>', '</table>'],
-  tfoot: [2, '<table>', '</table>'],
-  colgroup: [2, '<table>', '</table>'],
-  caption: [2, '<table>', '</table>'],
-  col: [3, '<table><colgroup>', '</colgroup></table>'],
-  td: [4, '<table><tbody><tr>', '</tr></tbody></table>'],
-  th: [4, '<table><tbody><tr>', '</tr></tbody></table>'],
-  option: [2, '<select multiple>', '</select>'],
-  optgroup: [2, '<select multiple>', '</select>'],
-  legend: [2, '<fieldset>', '</fieldset>'],
-  area: [2, '<map>', '</map>'],
+  tr: [2, '<table><tbody>', '</tbody></table>'],
+  tbody: [1, '<table>', '</table>'],
+  thead: [1, '<table>', '</table>'],
+  tfoot: [1, '<table>', '</table>'],
+  colgroup: [1, '<table>', '</table>'],
+  caption: [1, '<table>', '</table>'],
+  col: [2, '<table><colgroup>', '</colgroup></table>'],
+  td: [3, '<table><tbody><tr>', '</tr></tbody></table>'],
+  th: [3, '<table><tbody><tr>', '</tr></tbody></table>'],
+  option: [1, '<select multiple>', '</select>'],
+  optgroup: [1, '<select multiple>', '</select>'],
+  legend: [1, '<fieldset>', '</fieldset>'],
+  area: [1, '<map>', '</map>'],
 });
 const rTag = /^\s*<([a-z][a-z0-9-]*)/i;
 
@@ -88,17 +88,17 @@ const addRegistry = (node, type, entry) => {
 };
 const clearRegistry = (el) => {
   if (!isElement(el)) return;
-  const detach = (node) => {
-    const store = registry.get(node);
-    if (!store) return;
-    for (const [type, list] of store) {
-      for (let i = 0; i < list.length; i++) node.removeEventListener(type, list[i].listener);
-    }
-    registry.delete(node);
-  };
-  detach(el);
+  clearEvents(el);
   const all = el.querySelectorAll('*');
-  for (let i = 0; i < all.length; i++) detach(all[i]);
+  for (let i = 0; i < all.length; i++) clearEvents(all[i]);
+};
+const clearEvents = (el) => {
+  const store = registry.get(el);
+  if (!store) return;
+  for (const [type, list] of store) {
+    for (let i = 0; i < list.length; i++) el.removeEventListener(type, list[i].listener);
+  }
+  registry.delete(el);
 };
 const splitWords = (str) => {
   if (!isString(str) || str.length === 0) return emptyArray;
@@ -115,17 +115,19 @@ const splitWords = (str) => {
 };
 const copyInto = (target, source) => {
   if (!source) return;
-  if (isNumber(source.length)) {
-    const len = source.length >>> 0;
-    target.length = len;
-    for (let i = 0; i < len; i++) target[i] = source[i];
-    return;
-  }
-  if (source[Symbol.iterator]) {
-    let i = 0;
-    for (const item of source) target[i++] = item;
-    target.length = i;
-    return;
+  if (source !== win) {
+    if (isNumber(source.length)) {
+      const len = source.length >>> 0;
+      target.length = len;
+      for (let i = 0; i < len; i++) target[i] = source[i];
+      return;
+    }
+    if (source[Symbol.iterator]) {
+      let i = 0;
+      for (const item of source) target[i++] = item;
+      target.length = i;
+      return;
+    }
   }
   target[0] = source;
   target.length = 1;
@@ -178,14 +180,11 @@ class Tyrella {
     return ArrayPrototype[Symbol.iterator].call(this);
   }
   each(callback) {
-    const len = this.length, fakeEngine = $();
-    fakeEngine.length = 1;
+    const len = this.length;
     for (let i = 0; i < len; i++) {
-      const target = this[i];
-      fakeEngine[0] = target;
-      if (callback.call(fakeEngine, target, i) === false) break;
+      const target = this[i], el = $(target);
+      if (callback.call(el, target, i) === false) break;
     }
-    fakeEngine[0] = null;
     return this;
   }
   map(callback) {
@@ -194,9 +193,11 @@ class Tyrella {
     for (let i = 0; i < len; i++) {
       const res = callback(this[i], i);
       if (res != null) {
-        if (isNumber(res.length)) {
+        if (!isString(res) && isNumber(res.length)) {
           for (let j = 0; j < res.length; j++) result.pushUnique(res[j]);
-        } else result.pushUnique(res);
+        } else {
+          result.pushUnique(res);
+        }
       }
     }
     return result;
@@ -237,7 +238,7 @@ class Tyrella {
     return new Tyrella(new Set(this));
   }
   get(index) {
-    if (isUndefined(index)) return slice.call(this);
+    if (index == null) return slice.call(this);
     const numeric = Number(index);
     const normalized = numeric < 0 ? numeric + this.length : numeric;
     return this[normalized];
@@ -443,8 +444,8 @@ class Tyrella {
     const len = this.length;
     for (let i = 0; i < len; i++) {
       const el = this[i];
-      //const children = el.children;
-      //for (let j = 0; j < children.length; j++) clearRegistry(children[j]);
+      const children = el.children, l = children.length;
+      for (let j = 0; j < l; j++) clearRegistry(children[j]);
       el.replaceChildren();
     }
     return this;
@@ -553,6 +554,15 @@ class Tyrella {
     return this;
   }
   off(events, delegate, maybeHandler) {
+    if (events == null) {
+      const len = this.length;
+      for (let i = 0; i < len; i++) {
+        const node = this[i];
+        if (!isElement(node)) continue;
+        clearEvents(node);
+      }
+      return this;
+    }
     const hasSelector = isString(delegate);
     const selector = hasSelector ? delegate : null;
     const handler = hasSelector ? maybeHandler : delegate;

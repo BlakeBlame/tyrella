@@ -258,21 +258,36 @@ fn.delay = function(ms = 1) {
   }
   return this;
 };
-fn.show = function () {
-  const len = this.length;
-  for (let i = 0; i < len; i++) {
-    const el = this[i];
-    if (!isElement(el)) continue;
-    el.style.display = el.style.display === 'none' ? 'block' : el.style.display;
-  }
-  return this;
-};
+const displayCache = new WeakMap();
 fn.hide = function () {
   const len = this.length;
   for (let i = 0; i < len; i++) {
     const el = this[i];
     if (!isElement(el)) continue;
+    if (el.style.display !== 'none') {
+      let currentDisplay = el.style.display;
+      if (!currentDisplay) {
+        currentDisplay = win.getComputedStyle(el).display;
+      }
+      if (currentDisplay && currentDisplay !== 'none') {
+        displayCache.set(el, currentDisplay);
+      }
+    }
     el.style.display = 'none';
+  }
+  return this;
+};
+fn.show = function () {
+  const len = this.length;
+  for (let i = 0; i < len; i++) {
+    const el = this[i];
+    if (!isElement(el)) continue;
+    const cached = displayCache.get(el);
+    if (cached) {
+      el.style.display = cached;
+    } else {
+      el.style.display = '';
+    }
   }
   return this;
 };
