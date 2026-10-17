@@ -157,5 +157,8 @@ $('.box').trigger('custom:action', { foo: 'bar' });
 
 ---
 
+#Plugins
+[Plugins Folder](./plugins)
+
 ## 📄 License
 MIT

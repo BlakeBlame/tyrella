@@ -16,12 +16,7 @@
 
 ## 📦 Installation
 
-Make sure **Tyrella JS** is loaded before including this animation plugin:
-
-```html
-<script src="https://github.com/BlakeBlame/tyrella/blob/main/tyrella.js"></script>
-
-```
+Make sure **[Tyrella JS](https://github.com/BlakeBlame/tyrella)** is loaded before including this animation plugin.
 
 ---
 
@@ -99,9 +94,4 @@ $('.box').animate(
 ---
 
 ## 📄 License
-
 MIT
-
-```
-
-```
