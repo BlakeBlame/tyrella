@@ -38,7 +38,7 @@ $('.box')
 
 ### 2. Passing Options via Object (Native WAAPI Integration)
 
-If you pass parameters as an object in the second argument, **all supported native WAAPI options** (such as `iterations`, `direction`, `easing`, `delay`, etc.) are automatically filtered and passed directly to the browser's `el.animate()` method.
+If you pass parameters as an object in the second argument, **all supported native WAAPI options** (such as `iterations`, `direction`, `easing`, `delay`, etc.) are passed directly to the browser's `el.animate()` method.
 
 ```javascript
 $('.box').animate({
