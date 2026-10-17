@@ -1,12 +1,13 @@
+// Tyrella JS v1.2
 (function (root, factory) {
   const api = factory(root);
   // Electron / NW.js expose BOTH `module` and `window`, so CommonJS export and the
   // global `$` must not be mutually exclusive (classic UMD would skip the global there).
   if (typeof module === 'object' && module !== null && module.exports) module.exports = api;
-  if (root && root.document) root.$ = api;
+  if (root && root.document) root.$ = root.Tyrella = api;
 })(typeof window !== 'undefined' ? window : globalThis, function (win) {
 'use strict';
-const doc = win.document, createFragment = doc.createDocumentFragment.bind(doc), createText = doc.createTextNode.bind(doc);
+const doc = win.document, createFragment = doc.createDocumentFragment.bind(doc);
 
 const isEngine = (v) => v instanceof Tyrella;
 const isString = (v) => typeof v === 'string';
@@ -18,31 +19,11 @@ const isElement = (v) => v && v.nodeType === 1;
 const isDocument = (v) => v && v.nodeType === 9;
 const isFragment = (v) => v && v.nodeType === 11;
 
-const { isArray, prototype: ArrayPrototype } = win.Array;
+const { prototype: ArrayPrototype } = win.Array;
 const { slice, includes } = ArrayPrototype;
-const { freeze, keys, create, assign } = win.Object;
+const { freeze, keys, assign } = win.Object;
 const { stringify } = win.JSON;
-const { fromCharCode } = win.String;
 
-const camelCache = create(null);
-const toCamelCase = (property) => {
-  let result = camelCache[property] || '';
-  if (result) return result;
-  let upper = false, length = property.length;
-  for (let i = 0; i < length; i++) {
-    const code = property.charCodeAt(i);
-    if (code === 45) {
-      upper = true;
-    } else if (upper) {
-      result += fromCharCode(code >= 97 && code <= 122 ? code - 32 : code);
-      upper = false;
-    } else {
-      result += property[i];
-    }
-  }
-  camelCache[property] = result;
-  return result;
-};
 const template = doc.createElement('template');
 
 const WRAP_MAP = freeze({
@@ -156,7 +137,6 @@ const matchesSelector = (node, selector, index) => {
   if (isEngine(selector)) return selector.includes(node);
   return (isElement(node) && node.matches(selector));
 };
-const isVar = (prop) => prop.startsWith('--');
 const delegateFn = (selector, handler) => function (e) {
   let target = e.target;
   if (target && !isElement(target)) {
@@ -288,7 +268,7 @@ class Tyrella {
       const children = this[i].children;
       for (let j = 0, l = children.length; j < l; j++) {
         const child = children[j];
-        if ((!sel || matchesSelector(child, sel, i))) result.push(child);
+        if ((!sel || matchesSelector(child, sel, j))) result.push(child);
       }
     }
     return result;
@@ -494,29 +474,6 @@ class Tyrella {
     for (let i = 0; i < len; i++) this[i].dataset[name] = stored;
     return this;
   }
-  css(prop, value) {
-    if (isObject(prop)) {
-      for (const k in prop) this.css(k, prop[k]);
-      return this;
-    }
-    const len = this.length;
-    if (isUndefined(value)) {
-      if (!len) return undefined;
-      const el = this[0];
-      if (isVar(prop)) return getComputedStyle(el).getPropertyValue(prop);
-      const camel = toCamelCase(prop);
-      return getComputedStyle(el)[camel] || el.style[camel];
-    }
-    const is_var = isVar(prop);
-    const camel = is_var ? prop : toCamelCase(prop);
-    for (let i = 0; i < len; i++) {
-      const { nodeType, style } = this[i];
-      if (nodeType !== 1) continue;
-      if (is_var) style.setProperty(prop, value);
-      else style[camel] = value;
-    }
-    return this;
-  }
   prop(name, value) {
     const len = this.length;
     if (isUndefined(value)) return len ? this[0][name] : undefined;
@@ -649,7 +606,7 @@ const $ = (selector, context) => {
   if (!selector) return new Tyrella();
   if (isFunction(selector)) {
     if (doc.readyState !== 'loading') win.setTimeout(selector, 1);
-    else doc.addEventListener('DOMContentLoaded', selector, { once: true });
+    else doc.addEventListener('DOMContentLoaded', selector, optSample);
     return;
   }
   if (isString(selector)) {
@@ -660,9 +617,9 @@ const $ = (selector, context) => {
   }
   return new Tyrella(selector);
 };
-const fn = $.fn = $.prototype = Tyrella.prototype;
-fn.toArray = slice;
-fn.includes = includes;
+$.fn = $.prototype = Tyrella.prototype;
+$.fn.toArray = slice;
+$.fn.includes = includes;
 $.toArray = function(value) {
   if (!value || isString(value) || isFunction(value)) return [];
   if (!isNumber(value.length)) return [value];
@@ -684,17 +641,5 @@ $.each = function(collection, callback) {
   }
   return collection;
 };
-/*
-$.generate = function(html) {
-  if (!html.startsWith("<")) return createText(html);
-  return parseHTML(html);
-};
-$.select = function(selector, context) {
-  if (!(selector = selector.trimStart())) return null;
-  if (selector.startsWith('<')) return parseHTML(selector);
-  const ctx = isEngine(context) ? context[0] : context;
-  return querySelect(selector, ctx || doc);
-};
-*/
 return $;
 });
