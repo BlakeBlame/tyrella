@@ -1,5 +1,5 @@
 /**
- * Tyrella JS Animations Plugin v1.0 (WAAPI-based)
+ * Tyrella JS Animations Plugin v1.1 (WAAPI-based)
  * High-performance jQuery-like animations using the Web Animations API (WAAPI)
  * with automatic style commitment and memory cleanup upon completion.
  */
@@ -17,38 +17,16 @@ const isString = (v) => typeof v === 'string';
 const isNumber = (v) => typeof v === 'number';
 const isFunction = (v) => typeof v === 'function';
 const isObject = (v) => v && typeof v === 'object';
-const isUndefined = (v) => v === undefined;
 const isElement = (v) => v && v.nodeType === 1;
 
-const { fromCharCode } = win.String;
 const { isArray } = win.Array;
 const { create, assign, keys, freeze } = win.Object;
 const { isFinite } = win.Number;
 
-const checkVar = (prop) => prop.startsWith('--');
 const delProto = (obj) => assign(create(null), obj);
-const camelCache = create(null);
-const toCamelCase = (property) => {
-  let result = camelCache[property] || '';
-  if (result) return result;
-  let upper = false, length = property.length;
-  for (let i = 0; i < length; i++) {
-    const code = property.charCodeAt(i);
-    if (code === 45) {
-      upper = true;
-    } else if (upper) {
-      result += fromCharCode(code >= 97 && code <= 122 ? code - 32 : code);
-      upper = false;
-    } else {
-      result += fromCharCode(code);
-    }
-  }
-  camelCache[property] = result;
-  return result;
-};
 // Helper to parse duration and easing / callbacks
 function ArgsParser(duration, easing, callback) {
-  this.fill = 'both';
+  this.fill = 'both'; this.duration = 400; this.easing = 'swing'; this.queue = true;
   if (isObject(duration)) {
     assign(this, duration);
   } else {
@@ -69,7 +47,7 @@ function ArgsParser(duration, easing, callback) {
   this.duration = resolveDuration(this.duration);
   this.easing = resolveEasing(this.easing);
 }
-ArgsParser.prototype = delProto({ duration: 400, easing: 'swing', queue: true });
+ArgsParser.prototype = null;
 const SPEED = freeze(delProto({ fast: 200, slow: 600, normal: 400 }));
 const toFiniteNumber = (value, fallback) => {
   if (isNumber(value) && isFinite(value)) {
@@ -82,7 +60,7 @@ const toFiniteNumber = (value, fallback) => {
   return fallback;
 };
 const resolveDuration = (d) => {
-  if (isNumber(d)) return d;
+  if (isNumber(d) && isFinite(d)) return d < 0 ? 0 : d;
   if (SPEED[d]) return SPEED[d];
   return toFiniteNumber(d, SPEED.normal);
 };
@@ -181,9 +159,8 @@ class QueueHandler {
       const task = pending[i];
       if (task.type !== 'anim') continue;
       applyStyles(task.el.style, createKeyFrame(task.properties));
-      if (isFunction(task.opts.finish)) {
-        task.opts.finish.call(task.el);
-      }
+      if (frames === fadeOutFrame) hideElement(task.el);
+      if (isFunction(task.opts.finish)) task.opts.finish.call(task.el);
     }
     return this;
   }
@@ -196,7 +173,10 @@ class QueueHandler {
 const applyStyles = (style, keyframes) => {
   if (!keyframes.length) return;
   const finalFrame = keyframes[keyframes.length - 1];
-  assign(style, finalFrame);
+  for (const prop in finalFrame) {
+    if (prop.startsWith("-")) style.setProperty(prop, finalFrame[prop]);
+    else style[prop] = finalFrame[prop];
+  }
 };
 const runAnimation = (el, frames, opts, onComplete = null) => {
   const anim = el.animate(frames, opts);
@@ -209,6 +189,8 @@ const runAnimation = (el, frames, opts, onComplete = null) => {
     if (type === 'finish') {
       anim.commitStyles();
       anim.cancel();
+      // Bad sample
+      if (frames === fadeOutFrame) hideElement(el);
     }
     const callback = opts[type];
     if (isFunction(callback)) callback.call(el, e);
@@ -220,7 +202,7 @@ const runAnimation = (el, frames, opts, onComplete = null) => {
 // Core animate method using WAAPI
 fn.animate = function (properties, duration = 400, easing = 'swing', callback = null) {
   const len = this.length;
-  if (!len || !properties) return this;
+  if (!len || !properties || (isArray(properties) && !properties.length)) return this;
   const opts = new ArgsParser(duration, easing, callback);
   const useQueue = opts.queue !== false;
   for (let i = 0; i < len; i++) {
@@ -259,21 +241,21 @@ fn.delay = function(ms = 1) {
   return this;
 };
 const displayCache = new WeakMap();
+const hideElement = (el) => {
+  if (el.style.display === 'none') return;
+  let d = el.style.display;
+  if (!d) d = win.getComputedStyle(el).display;
+  if (d && d !== 'none') displayCache.set(el, d);
+  el.style.display = 'none';
+};
 fn.hide = function () {
   const len = this.length;
   for (let i = 0; i < len; i++) {
     const el = this[i];
     if (!isElement(el)) continue;
-    if (el.style.display !== 'none') {
-      let currentDisplay = el.style.display;
-      if (!currentDisplay) {
-        currentDisplay = win.getComputedStyle(el).display;
-      }
-      if (currentDisplay && currentDisplay !== 'none') {
-        displayCache.set(el, currentDisplay);
-      }
-    }
-    el.style.display = 'none';
+    hideElement(el);
+    const s = fx.get(el);
+    if (s) s.stop(true, false);
   }
   return this;
 };
@@ -285,7 +267,7 @@ fn.show = function () {
     const cached = displayCache.get(el);
     if (cached) {
       el.style.display = cached;
-    } else {
+    } else if (el.style.display === 'none') {
       el.style.display = '';
     }
   }
@@ -300,27 +282,5 @@ fn.fadeOut = function (duration = 400, easing = 'swing', callback = null) {
 };
 fn.fadeTo = function (opacity = 1, duration = 400, easing = 'swing', callback = null) {
   return this.animate([{ opacity }], duration, easing, callback);
-};
-fn.css = function (prop, value) {
-  if (isObject(prop)) {
-    for (const k in prop) this.css(k, prop[k]);
-    return this;
-  }
-  const len = this.length, isVar = checkVar(prop);
-  if (isUndefined(value)) {
-    if (!len) return undefined;
-    const el = this[0];
-    if (isVar) return win.getComputedStyle(el).getPropertyValue(prop);
-    const camel = toCamelCase(prop);
-    return win.getComputedStyle(el)[camel] || el.style[camel];
-  }
-  const camel = isVar ? prop : toCamelCase(prop);
-  for (let i = 0; i < len; i++) {
-    const { nodeType, style } = this[i];
-    if (nodeType !== 1) continue;
-    if (isVar) style.setProperty(prop, value);
-    else style[camel] = value;
-  }
-  return this;
 };
 })(typeof window !== 'undefined' ? window : globalThis);

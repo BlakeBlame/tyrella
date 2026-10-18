@@ -21,12 +21,33 @@ const isFragment = (v) => v && v.nodeType === 11;
 
 const { prototype: ArrayPrototype } = win.Array;
 const { slice, includes } = ArrayPrototype;
-const { freeze, keys, assign } = win.Object;
+const { freeze, keys, assign, create } = win.Object;
 const { stringify } = win.JSON;
+const { fromCharCode } = win.String;
 
+const checkVar = (prop) => prop.startsWith('--');
+const camelCache = create(null);
+const toCamelCase = (property) => {
+  if (!property.includes("-")) return property;
+  let result = camelCache[property] || '';
+  if (result) return result;
+  let upper = false, length = property.length;
+  for (let i = 0; i < length; i++) {
+    const code = property.charCodeAt(i);
+    if (code === 45) {
+      upper = true;
+    } else if (upper) {
+      result += fromCharCode(code >= 97 && code <= 122 ? code - 32 : code);
+      upper = false;
+    } else {
+      result += fromCharCode(code);
+    }
+  }
+  camelCache[property] = result;
+  return result;
+};
 const template = doc.createElement('template');
-
-const WRAP_MAP = freeze({
+const WRAP_MAP = freeze(assign(create(null), {
   tr: [2, '<table><tbody>', '</tbody></table>'],
   tbody: [1, '<table>', '</table>'],
   thead: [1, '<table>', '</table>'],
@@ -40,9 +61,8 @@ const WRAP_MAP = freeze({
   optgroup: [1, '<select multiple>', '</select>'],
   legend: [1, '<fieldset>', '</fieldset>'],
   area: [1, '<map>', '</map>'],
-});
+}));
 const rTag = /^\s*<([a-z][a-z0-9-]*)/i;
-
 const parseHTML = (html) => {
   const tag = rTag.exec(html)?.[1].toLowerCase();
   const wrap = tag && WRAP_MAP[tag];
@@ -102,6 +122,7 @@ const clearEvents = (el) => {
 };
 const splitWords = (str) => {
   if (!isString(str) || str.length === 0) return emptyArray;
+  if (!str.includes(" ")) return [str];
   let i = 0, count = 0;
   const len = str.length, result = [];
   while (i < len) {
@@ -114,23 +135,20 @@ const splitWords = (str) => {
   return result;
 };
 const copyInto = (target, source) => {
-  if (!source) return;
-  if (source !== win) {
-    if (isNumber(source.length)) {
-      const len = source.length >>> 0;
-      target.length = len;
-      for (let i = 0; i < len; i++) target[i] = source[i];
-      return;
-    }
-    if (source[Symbol.iterator]) {
-      let i = 0;
-      for (const item of source) target[i++] = item;
-      target.length = i;
-      return;
-    }
+  if (!source) return false;
+  if (isNumber(source.length)) {
+    const len = source.length >>> 0;
+    target.length = len;
+    for (let i = 0; i < len; i++) target[i] = source[i];
+    return false;
   }
-  target[0] = source;
-  target.length = 1;
+  if (source[Symbol.iterator]) {
+    let i = 0;
+    for (const item of source) target[i++] = item;
+    target.length = i;
+    return false;
+  }
+  return true;
 };
 const matchesSelector = (node, selector, index) => {
   if (!node) return false;
@@ -166,7 +184,10 @@ const SMOOTH = { behavior: 'smooth' }, optSample = { once: true };
 class Tyrella {
   constructor(elements) {
     this.length = 0;
-    copyInto(this, elements);
+    if (elements === win || copyInto(this, elements)) {
+      this[0] = elements;
+      this.length = 1;
+    }
   }
   push(el) {
     this[this.length++] = el;
@@ -383,7 +404,7 @@ class Tyrella {
     let originalUsed = false;
     for (let i = 0; i < len; i++) {
       const target = this[i];
-      if (!isElement(target) && !isDocument(target)) continue;
+      if (!isElement(target)) continue;
       const insertion = toFragment(nodes, originalUsed);
       if (!insertion) continue;
       target.replaceWith(insertion);
@@ -435,8 +456,10 @@ class Tyrella {
   remove() {
     const len = this.length;
     for (let i = 0; i < len; i++) {
-      clearRegistry(this[i]);
-      this[i].remove();
+      const el = this[i];
+      if (isDocument(el)) continue;
+      clearRegistry(el);
+      el.remove();
     }
     return this;
   }
@@ -473,6 +496,29 @@ class Tyrella {
     if (isUndefined(value)) return len ? this[0].dataset[name] : null;
     const stored = isString(value) ? value : stringify(value);
     for (let i = 0; i < len; i++) this[i].dataset[name] = stored;
+    return this;
+  }
+  css(prop, value) {
+    if (isUndefined(prop)) return this;
+    if (isObject(prop)) {
+      for (const k in prop) this.css(k, prop[k]);
+      return this;
+    }
+    const len = this.length, isVar = checkVar(prop);
+    if (isUndefined(value)) {
+      if (!len) return undefined;
+      const el = this[0];
+      if (isVar) return win.getComputedStyle(el).getPropertyValue(prop);
+      const camel = toCamelCase(prop);
+      return win.getComputedStyle(el)[camel] || el.style[camel];
+    }
+    const camel = isVar ? prop : toCamelCase(prop);
+    for (let i = 0; i < len; i++) {
+      const { nodeType, style } = this[i];
+      if (nodeType !== 1) continue;
+      if (isVar) style.setProperty(prop, value);
+      else style[camel] = value;
+    }
     return this;
   }
   prop(name, value) {
@@ -556,11 +602,7 @@ class Tyrella {
   off(events, delegate, maybeHandler) {
     if (events == null) {
       const len = this.length;
-      for (let i = 0; i < len; i++) {
-        const node = this[i];
-        if (!isElement(node)) continue;
-        clearEvents(node);
-      }
+      for (let i = 0; i < len; i++) clearEvents(this[i]);
       return this;
     }
     const hasSelector = isString(delegate);
@@ -599,7 +641,7 @@ class Tyrella {
   }
   scroll() {
     const el = this[0];
-    if (el) el.scrollIntoView(SMOOTH);
+    if (el && !isDocument(el)) el.scrollIntoView(SMOOTH);
     return this;
   }
   size() {
@@ -651,5 +693,8 @@ $.each = function(collection, callback) {
   }
   return collection;
 };
+$.copyInto = copyInto;
+$.assign = assign;
+$.splitWords = splitWords;
 return $;
 });
