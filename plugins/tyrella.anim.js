@@ -1,5 +1,5 @@
 /**
- * Tyrella JS Animations Plugin v1.1 (WAAPI-based)
+ * Tyrella JS Animations Plugin v1.2 (WAAPI-based)
  * High-performance jQuery-like animations using the Web Animations API (WAAPI)
  * with automatic style commitment and memory cleanup upon completion.
  */
@@ -25,7 +25,7 @@ const { isFinite } = win.Number;
 
 const delProto = (obj) => assign(create(null), obj);
 // Helper to parse duration and easing / callbacks
-function ArgsParser(duration, easing, callback) {
+function ArgsParser(duration, easing, callback, frameType) {
   this.fill = 'both'; this.duration = 400; this.easing = 'swing'; this.queue = true;
   if (isObject(duration)) {
     assign(this, duration);
@@ -46,6 +46,7 @@ function ArgsParser(duration, easing, callback) {
   }
   this.duration = resolveDuration(this.duration);
   this.easing = resolveEasing(this.easing);
+  this.frameType = frameType;
 }
 ArgsParser.prototype = null;
 const SPEED = freeze(delProto({ fast: 200, slow: 600, normal: 400 }));
@@ -84,13 +85,24 @@ const getFxState = (el) => {
   if (!s) fx.set(el, s = new QueueHandler());
   return s;
 };
+const frameMap = freeze(delProto({
+  show: [{ opacity: 0 }, { opacity: 1 }],
+  hide: [{ opacity: 1 }, { opacity: 0 }],
+  //Add new here
+}));
 const createKeyFrame = (properties) => {
+  if (isString(properties)) return frameMap[properties];
   if (isArray(properties)) return properties;
   return [properties];
 };
 class QueueHandler {
   queue = [];
   active = null;
+  live = new Set();
+  parallel(el, properties, opts) {
+    const anim = runAnimation(el, properties, opts, () => this.live.delete(anim));
+    this.live.add(anim);
+  }
   enqueue(task) {
     this.queue.push(task);
     this.dequeue();
@@ -120,6 +132,7 @@ class QueueHandler {
     if (clearQueue) {
       this.queue.length = 0;
     }
+    this.stopLive(jumpToEnd);
     const active = this.active;
     if (!active) return;
     this.active = null;
@@ -141,6 +154,7 @@ class QueueHandler {
     if (!clearQueue) this.dequeue();
   }
   finish() {
+    this.stopLive(true);
     const active = this.active;
     if (!active) return;
     this.active = null;
@@ -159,12 +173,23 @@ class QueueHandler {
       const task = pending[i];
       if (task.type !== 'anim') continue;
       applyStyles(task.el.style, createKeyFrame(task.properties));
-      if (frames === fadeOutFrame) hideElement(task.el);
+      if (task.opts.frameType === "hide") hideElement(task.el);
+      else if (task.opts.frameType === "show") showElement(task.el);
       if (isFunction(task.opts.finish)) task.opts.finish.call(task.el);
     }
     return this;
   }
-
+  stopLive(finish) {
+    for (const anim of this.live) {
+      if (finish) {
+        anim.finish();
+      } else {
+        anim.commitStyles();
+        anim.cancel();
+      }
+    }
+    return this;
+  }
   clearQueue() {
     this.queue.length = 0;
     return this;
@@ -178,7 +203,8 @@ const applyStyles = (style, keyframes) => {
     else style[prop] = finalFrame[prop];
   }
 };
-const runAnimation = (el, frames, opts, onComplete = null) => {
+const runAnimation = (el, frames, opts, onComplete) => {
+  if (opts.frameType === "show") showElement(el);
   const anim = el.animate(frames, opts);
 
   let done = false;
@@ -189,8 +215,7 @@ const runAnimation = (el, frames, opts, onComplete = null) => {
     if (type === 'finish') {
       anim.commitStyles();
       anim.cancel();
-      // Bad sample
-      if (frames === fadeOutFrame) hideElement(el);
+      if (opts.frameType === "hide") hideElement(el);
     }
     const callback = opts[type];
     if (isFunction(callback)) callback.call(el, e);
@@ -202,14 +227,16 @@ const runAnimation = (el, frames, opts, onComplete = null) => {
 // Core animate method using WAAPI
 fn.animate = function (properties, duration = 400, easing = 'swing', callback = null) {
   const len = this.length;
-  if (!len || !properties || (isArray(properties) && !properties.length)) return this;
-  const opts = new ArgsParser(duration, easing, callback);
+  if (!len || !properties || (isArray(properties) && !properties.length) ||
+    (isString(properties) && !frameMap[properties])) return this;
+  const opts = new ArgsParser(duration, easing, callback, isString(properties) ? properties : "");
   const useQueue = opts.queue !== false;
   for (let i = 0; i < len; i++) {
     const el = this[i];
     if (!isElement(el)) continue;
-    if (useQueue) getFxState(el).enqueue({ type: "anim", el, properties, opts });
-    else runAnimation(el, createKeyFrame(properties), opts);
+    const state = getFxState(el);
+    if (useQueue) state.enqueue({ type: "anim", el, properties, opts });
+    else state.parallel(el, createKeyFrame(properties), opts);
   }
   return this;
 };
@@ -259,28 +286,30 @@ fn.hide = function () {
   }
   return this;
 };
+const showElement = (el) => {
+  const cached = displayCache.get(el);
+  if (cached) {
+    el.style.display = cached;
+  } else if (el.style.display === 'none') {
+    el.style.display = '';
+  }
+};
 fn.show = function () {
   const len = this.length;
   for (let i = 0; i < len; i++) {
     const el = this[i];
     if (!isElement(el)) continue;
-    const cached = displayCache.get(el);
-    if (cached) {
-      el.style.display = cached;
-    } else if (el.style.display === 'none') {
-      el.style.display = '';
-    }
+    showElement(el);
   }
   return this;
 };
-const fadeInFrame = [{ opacity: 0 }, { opacity: 1 }], fadeOutFrame = [{ opacity: 1 }, { opacity: 0 }];
 fn.fadeIn = function (duration = 400, easing = 'swing', callback = null) {
-  return this.show().animate(fadeInFrame, duration, easing, callback);
+  return this.animate("show", duration, easing, callback);
 };
 fn.fadeOut = function (duration = 400, easing = 'swing', callback = null) {
-  return this.animate(fadeOutFrame, duration, easing, callback);
+  return this.animate("hide", duration, easing, callback);
 };
 fn.fadeTo = function (opacity = 1, duration = 400, easing = 'swing', callback = null) {
-  return this.animate([{ opacity }], duration, easing, callback);
+  return this.animate({ opacity }, duration, easing, callback);
 };
 })(typeof window !== 'undefined' ? window : globalThis);

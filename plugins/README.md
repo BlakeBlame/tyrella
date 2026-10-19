@@ -69,11 +69,49 @@ $('.box').finish();
 
 ```
 
+### 4. `queue: false` — Parallel Animations
+
+With `queue: false` the animation runs immediately, in parallel with the active queue, and is tracked separately:
+
+```javascript
+$('.box')
+  .animate({ width: '200px' }, 500)
+  .animate({ height: '200px' }, 500, { queue: false }); // runs in parallel
+```
+
+Unlike jQuery, `.stop()` and `.finish()` also stop these parallel animations. Note that `.stop()`, `.finish()` and `.hide()` invoke the affected animations' `finish` / `cancel` callbacks — an intentional difference from jQuery, which never fires callbacks on `.stop()`.
+
+### 5. Fading & Display Helpers
+
+```javascript
+$('.box').fadeIn(300);   // restores previous display, animates opacity 0 → 1
+$('.box').fadeOut(300);  // animates opacity 1 → 0, then sets display: none
+$('.box').fadeTo(0.5);   // animates to the given opacity, display untouched
+$('.box').hide();        // instant: remembers display, then display: none
+$('.box').show();        // instant: restores the remembered display
+```
+
+`hide()` / `fadeOut()` remember the element's previous `display` value and `show()` / `fadeIn()` restore it. When nothing was remembered, `show()` clears an inline `display: none`.
+
+### 6. Argument Forms
+
+`animate(properties, duration, easing, callback)` accepts:
+- `animate(properties)` — defaults: 400 ms, `swing` easing
+- `animate(properties, 1000)` / `animate(properties, 'fast')`
+- `animate(properties, 1000, 'easeOutCubic')`
+- `animate(properties, callback)` / `animate(properties, 1000, callback)`
+- `animate(properties, {...})` — object form; all native WAAPI options pass through (`duration`, `easing`, `delay`, `endDelay`, `iterations`, `direction`, `fill`, …) plus Tyrella extras `queue`, `finish`, `cancel`
+- `animate('show', …)` / `animate('hide', …)` — named fade keyframes (used internally by `fadeIn` / `fadeOut`)
+
+Duration words: `fast` (200), `slow` (600), `normal` (400). Negative durations clamp to `0`; non-finite or unrecognized values fall back to `400`. Empty keyframe lists and unknown frame names are ignored (no-op). All animations use `fill: 'both'` by default and commit their final styles on completion (`commitStyles()`), so values never "snap back".
+
 ---
 
 ## ⚙️ Callbacks Note
 
 > **Important:** Since this is a lightweight WAAPI-based plugin rather than a heavy full jQuery library, it only supports native animation events/callbacks: **`finish`**, **`cancel`**.
+>
+> Inside callbacks, `this` is the animated element. `finish` fires on natural completion and when an animation is jumped to the end (`.stop(..., true)`, `.finish()`); `cancel` fires when an animation is stopped midway (`.stop()`, `.hide()`).
 
 ```javascript
 $('.box').animate(

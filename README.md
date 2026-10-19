@@ -157,6 +157,42 @@ $('.box').trigger('custom:action', { foo: 'bar' });
 
 ---
 
+## 📌 API Notes & Edge Cases
+
+### Selection
+- `$(selector, context)` — searches within a context element or an existing Tyrella collection.
+- `$(function () { ... })` — DOM-ready shorthand; the callback runs asynchronously (via `setTimeout`) when the document is already loaded and returns nothing.
+- `$('<div>…</div>')` — creates elements from HTML strings, including table/select fragments (`<tr>`, `<td>`, `<option>`, …).
+- `$(window)` and `$(document)` are valid collections.
+
+### Collection helpers
+`map`, `filter`, `not`, `is`, `unique`, `reverse`, `get(index)`, `eq(index)`, `first()`, `last()`.
+- `get()` without arguments returns a plain array of all elements; negative indexes count from the end (`get(-1)` → last element).
+- In `map()`, a returned string is pushed as a single item (never split into characters); arrays and array-likes are flattened.
+
+### Events
+- Delegated handlers receive `this` = the matched element: `$(el).on('click', '.item', fn)`.
+- `off()` with no arguments unbinds **all** handlers registered via `.on()` from the collection; `off(type, selector, handler)` unbinds selectively.
+- `remove()` and `empty()` automatically detach registered listeners (including those of children). `.html()` replaces content **without** cleaning up old listeners — call `.empty()` first when you need that.
+- `.one()` relies on the native `{ once: true }` option and is **not** kept in the registry: `.off()`, `.remove()` and `.empty()` cannot unbind it.
+- `trigger(type, detail)` dispatches a bubbling, cancelable `CustomEvent`; the payload is available as `event.detail`.
+- Event names and class names are split by spaces only; jQuery-style namespaced events (`click.ns`) are not supported.
+
+### Attributes, data & styles
+- `attr(name, null)` removes the attribute; `attr({...})` sets several at once.
+- `data()` reads/writes `dataset`; non-string values are stored via `JSON.stringify`.
+- `css()` accepts kebab-case or camelCase names and CSS custom properties (`css('--accent', '#f00')`); `css(prop, null)` removes the property. Values are passed to `style.setProperty()` as-is — numbers are **not** auto-suffixed with `px` (use `'100px'`). The getter reads the first element only.
+
+### DOM manipulation
+- `wrap()` returns the **wrapper** collection and `replace()` returns the **new content** collection (not the original one, unlike jQuery).
+- `width()` / `height()` return `offsetWidth` / `offsetHeight` of the first element; `size()` returns its `getBoundingClientRect()`.
+
+### Utilities & environment
+- `$.each(collection, fn)` (break the loop by returning `false`), `$.toArray(value)`, `$.version`, plus `$.copyInto`, `$.assign`, `$.splitWords`.
+- Targets modern browsers and NW.js environments (where both `module` and `window` exist). No polyfills for legacy browsers.
+
+---
+
 [Plugins Folder](./plugins)
 
 ## 📄 License

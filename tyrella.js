@@ -1,4 +1,4 @@
-// Tyrella JS v1.3
+// Tyrella JS v1.4
 (function (root, factory) {
   const api = factory(root);
   // Electron / NW.js expose BOTH `module` and `window`, so CommonJS export and the
@@ -15,6 +15,7 @@ const isNumber = (v) => typeof v === 'number';
 const isFunction = (v) => typeof v === 'function';
 const isObject = (v) => v && typeof v === 'object';
 const isUndefined = (v) => v === undefined;
+const isNull = (v) => v == null;
 const isElement = (v) => v && v.nodeType === 1;
 const isDocument = (v) => v && v.nodeType === 9;
 const isFragment = (v) => v && v.nodeType === 11;
@@ -26,24 +27,17 @@ const { stringify } = win.JSON;
 const { fromCharCode } = win.String;
 
 const checkVar = (prop) => prop.startsWith('--');
-const camelCache = create(null);
-const toCamelCase = (property) => {
-  if (!property.includes("-")) return property;
-  let result = camelCache[property] || '';
+const kebabCache = create(null);
+const toKebabCase = (property) => {
+  let result = kebabCache[property] || '';
   if (result) return result;
-  let upper = false, length = property.length;
+  let length = property.length;
   for (let i = 0; i < length; i++) {
     const code = property.charCodeAt(i);
-    if (code === 45) {
-      upper = true;
-    } else if (upper) {
-      result += fromCharCode(code >= 97 && code <= 122 ? code - 32 : code);
-      upper = false;
-    } else {
-      result += fromCharCode(code);
-    }
+    if (code >= 65 && code <= 90) result += '-' + fromCharCode(code + 32);
+    else result += fromCharCode(code);
   }
-  camelCache[property] = result;
+  kebabCache[property] = result;
   return result;
 };
 const template = doc.createElement('template');
@@ -194,7 +188,7 @@ class Tyrella {
     return this;
   }
   pushUnique(el) {
-    if (el != null && !this.includes(el)) this[this.length++] = el;
+    if (!isNull(el) && !this.includes(el)) this[this.length++] = el;
     return this;
   }
   [Symbol.iterator]() {
@@ -213,7 +207,7 @@ class Tyrella {
     const result = $(), len = this.length;
     for (let i = 0; i < len; i++) {
       const res = callback(this[i], i);
-      if (res != null) {
+      if (!isNull(res)) {
         if (!isString(res) && isNumber(res.length)) {
           for (let j = 0; j < res.length; j++) result.pushUnique(res[j]);
         } else {
@@ -259,7 +253,7 @@ class Tyrella {
     return new Tyrella(new Set(this));
   }
   get(index) {
-    if (index == null) return slice.call(this);
+    if (isNull(index)) return this.toArray(0);
     const numeric = Number(index);
     const normalized = numeric < 0 ? numeric + this.length : numeric;
     return this[normalized];
@@ -480,10 +474,11 @@ class Tyrella {
     }
     const len = this.length;
     if (isUndefined(value)) return len ? this[0].getAttribute(name) : null;
-    for (let i = 0; i < len; i++) {
-      if (value == null) this[i].removeAttribute(name);
-      else this[i].setAttribute(name, value);
+    if (isNull(value)) {
+      for (let i = 0; i < len; i++) this[i].removeAttribute(name);
+      return this;
     }
+    for (let i = 0; i < len; i++) this[i].setAttribute(name, value);
     return this;
   }
   data(name, value) {
@@ -499,25 +494,29 @@ class Tyrella {
     return this;
   }
   css(prop, value) {
-    if (isUndefined(prop)) return this;
     if (isObject(prop)) {
       for (const k in prop) this.css(k, prop[k]);
       return this;
     }
     const len = this.length, isVar = checkVar(prop);
+    const kebab = isVar ? prop : toKebabCase(prop);
     if (isUndefined(value)) {
       if (!len) return undefined;
       const el = this[0];
-      if (isVar) return win.getComputedStyle(el).getPropertyValue(prop);
-      const camel = toCamelCase(prop);
-      return win.getComputedStyle(el)[camel] || el.style[camel];
+      return win.getComputedStyle(el).getPropertyValue(kebab) || el.style.getPropertyValue(kebab);
     }
-    const camel = isVar ? prop : toCamelCase(prop);
+    if (isNull(value)) {
+      for (let i = 0; i < len; i++) {
+        const { nodeType, style } = this[i];
+        if (nodeType !== 1) continue;
+        style.removeProperty(kebab);
+      }
+      return this;
+    }
     for (let i = 0; i < len; i++) {
       const { nodeType, style } = this[i];
       if (nodeType !== 1) continue;
-      if (isVar) style.setProperty(prop, value);
-      else style[camel] = value;
+      style.setProperty(kebab, value);
     }
     return this;
   }
@@ -600,7 +599,7 @@ class Tyrella {
     return this;
   }
   off(events, delegate, maybeHandler) {
-    if (events == null) {
+    if (isNull(events)) {
       const len = this.length;
       for (let i = 0; i < len; i++) clearEvents(this[i]);
       return this;
@@ -608,7 +607,7 @@ class Tyrella {
     const hasSelector = isString(delegate);
     const selector = hasSelector ? delegate : null;
     const handler = hasSelector ? maybeHandler : delegate;
-    const removeAll = delegate == null;
+    const removeAll = isNull(delegate);
     const args = splitWords(events), argLen = args.length, len = this.length;
     for (let e = 0; e < argLen; e++) {
       const type = args[e];
@@ -620,7 +619,7 @@ class Tyrella {
         if (!list) continue;
         for (let j = list.length - 1; j >= 0; j--) {
           const entry = list[j];
-          if (removeAll || ((selector === null || entry.selector === selector) && (handler == null || entry.handler === handler))) {
+          if (removeAll || ((isNull(selector) || entry.selector === selector) && (isNull(handler) || entry.handler === handler))) {
             node.removeEventListener(type, entry.listener);
             list.splice(j, 1);
           }
@@ -669,6 +668,7 @@ const $ = (selector, context) => {
   }
   return new Tyrella(selector);
 };
+$.version = "1.4";
 $.fn = $.prototype = Tyrella.prototype;
 $.fn.toArray = slice;
 $.fn.includes = includes;
